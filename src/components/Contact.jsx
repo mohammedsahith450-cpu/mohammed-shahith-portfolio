@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { ChevronDown, Send, Mail, Phone } from 'lucide-react'
+import { ChevronDown, Send, Mail, Phone, Loader2 } from 'lucide-react'
 
 function LinkedinIcon({ size = 20 }) {
   return (
@@ -109,7 +109,7 @@ const PROJECT_TYPES = [
 ]
 
 /* ── Custom Select Component ───────────────────────── */
-function CustomSelect({ id, placeholder, value, onChange, options, searchable = false }) {
+function CustomSelect({ id, placeholder, value, onChange, options, searchable = false, hasError = false }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const ref = useRef(null)
@@ -142,7 +142,7 @@ function CustomSelect({ id, placeholder, value, onChange, options, searchable = 
       <button
         type="button"
         id={id}
-        className={`custom-select-trigger${open ? ' open' : ''}${!value ? ' placeholder' : ''}`}
+        className={`custom-select-trigger${open ? ' open' : ''}${!value ? ' placeholder' : ''}${hasError ? ' has-error' : ''}`}
         onClick={() => setOpen(!open)}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -194,31 +194,200 @@ function CustomSelect({ id, placeholder, value, onChange, options, searchable = 
 /* ── Main Contact Component ─────────────────────── */
 export default function Contact() {
   const [ref, inView] = useInView({ triggerOnce: true, threshold: 0.08 })
-  const [submitted, setSubmitted] = useState(false)
+  const [errors, setErrors] = useState({})
+  const [isLoading, setIsLoading] = useState(false)
+  const [notice, setNotice] = useState('')
 
-  const [form, setForm] = useState({
+  const initialForm = {
     name: '',
     email: '',
     country: '',
     dialCode: '+91',
+    dialValue: '+91_IN',
     phone: '',
     company: '',
     projectType: '',
     currency: 'INR',
     budget: '',
     message: '',
-  })
+  }
 
-  const setField = (field) => (val) => setForm((prev) => ({ ...prev, [field]: val }))
-  const setInput = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))
+  const [form, setForm] = useState(initialForm)
+
+  const setField = (field) => (val) => {
+    setForm((prev) => ({ ...prev, [field]: val }))
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }))
+    }
+  }
+
+  const setInput = (field) => (e) => {
+    setForm((prev) => ({ ...prev, [field]: e.target.value }))
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }))
+    }
+  }
+
+  const handleCountryChange = (val) => {
+    const found = COUNTRIES.find((c) => c.code === val)
+    setForm((prev) => ({
+      ...prev,
+      country: val,
+      dialCode: found ? found.dialCode : prev.dialCode,
+      dialValue: found ? `${found.dialCode}_${found.code}` : prev.dialValue,
+    }))
+    if (errors.country) {
+      setErrors((prev) => ({ ...prev, country: undefined }))
+    }
+  }
 
   const handleCurrencyChange = (val) => {
     setForm((prev) => ({ ...prev, currency: val, budget: '' }))
+    if (errors.currency) {
+      setErrors((prev) => ({ ...prev, currency: undefined }))
+    }
+    if (errors.budget) {
+      setErrors((prev) => ({ ...prev, budget: undefined }))
+    }
+  }
+
+  const handleDialChange = (val) => {
+    setForm((prev) => ({
+      ...prev,
+      dialCode: val.split('_')[0],
+      dialValue: val,
+    }))
+  }
+
+  const validateForm = () => {
+    const errs = {}
+
+    if (!form.name.trim()) {
+      errs.name = 'Full name is required'
+    }
+
+    if (!form.email.trim()) {
+      errs.email = 'Email address is required'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      errs.email = 'Please enter a valid email address'
+    }
+
+    if (!form.country) {
+      errs.country = 'Please select your country'
+    }
+
+    const cleanPhone = form.phone.replace(/[\s\-()]/g, '')
+    if (!form.phone.trim()) {
+      errs.phone = 'Phone number is required'
+    } else if (!/^\d{6,15}$/.test(cleanPhone)) {
+      errs.phone = 'Please enter a valid phone number (6-15 digits)'
+    }
+
+    if (!form.projectType) {
+      errs.projectType = 'Please select a project type'
+    }
+
+    if (!form.currency) {
+      errs.currency = 'Please select a currency'
+    }
+
+    if (!form.budget) {
+      errs.budget = 'Please select a budget range'
+    }
+
+    if (!form.message.trim()) {
+      errs.message = 'Please enter project details'
+    }
+
+    return errs
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    setSubmitted(true)
+
+    const errs = validateForm()
+    setErrors(errs)
+
+    const fieldOrder = ['name', 'email', 'country', 'phone', 'projectType', 'currency', 'budget', 'message']
+    const firstInvalid = fieldOrder.find((key) => errs[key])
+
+    if (firstInvalid) {
+      const idMap = {
+        name: 'f-name',
+        email: 'f-email',
+        country: 'f-country',
+        phone: 'f-phone',
+        projectType: 'f-project-type',
+        currency: 'f-currency',
+        budget: 'f-budget',
+        message: 'f-message',
+      }
+      const el = document.getElementById(idMap[firstInvalid])
+      if (el) {
+        el.focus()
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      return
+    }
+
+    const clientName = form.name.trim()
+    const clientEmail = form.email.trim()
+    const countryObj = COUNTRIES.find((c) => c.code === form.country)
+    const clientCountry = countryObj ? countryObj.name : form.country
+    const clientCompany = form.company.trim() ? form.company.trim() : 'N/A'
+    const clientPhone = `${form.dialCode} ${form.phone.trim()}`
+    const clientProjectType = form.projectType
+    const clientCurrency = form.currency
+    const clientBudget = form.budget
+    const clientMessage = form.message.trim()
+
+    const messageTemplate = [
+      'Hello Mohammed, I would like to start a project.',
+      '',
+      '━━━━━━━━━━━━━━━━━━',
+      'NEW PROJECT INQUIRY',
+      '━━━━━━━━━━━━━━━━━━',
+      '',
+      `Name: ${clientName}`,
+      '',
+      `Email: ${clientEmail}`,
+      '',
+      `Country: ${clientCountry}`,
+      '',
+      `Company / Business: ${clientCompany}`,
+      '',
+      `Phone: ${clientPhone}`,
+      '',
+      `Project Type: ${clientProjectType}`,
+      '',
+      `Currency: ${clientCurrency}`,
+      '',
+      `Budget Range: ${clientBudget}`,
+      '',
+      'Project Details:',
+      clientMessage,
+      '',
+      '━━━━━━━━━━━━━━━━━━',
+      "Sent from Mohammed Shahith's Portfolio",
+      '━━━━━━━━━━━━━━━━━━',
+    ].join('\n')
+
+    const encodedMessage = encodeURIComponent(messageTemplate)
+    const whatsappUrl = `https://wa.me/917845227057?text=${encodedMessage}`
+
+    setIsLoading(true)
+    setNotice('Opening WhatsApp chat...')
+
+    // Open WhatsApp Click-to-Chat directly
+    window.location.href = whatsappUrl
+
+    // Reset the form only AFTER successfully triggering the WhatsApp link
+    setTimeout(() => {
+      setForm(initialForm)
+      setErrors({})
+      setIsLoading(false)
+      setTimeout(() => setNotice(''), 5000)
+    }, 700)
   }
 
   const countryOptions = COUNTRIES.map((c) => ({ value: c.code, label: `${c.name}` }))
@@ -304,149 +473,160 @@ export default function Contact() {
 
           {/* Right — Form */}
           <motion.div className="contact-form-wrap" variants={itemVariant}>
-            {submitted ? (
-              <div style={{ textAlign: 'center', padding: '48px 0' }}>
-                <div style={{ fontSize: 52, marginBottom: 16 }}>✅</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--color-text-primary)', marginBottom: 8 }}>
-                  Message Sent!
+            {notice && (
+              <div className="form-notice-banner" role="status">
+                {notice}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} noValidate>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="f-name">Name *</label>
+                  <input
+                    id="f-name"
+                    className={`form-input${errors.name ? ' has-error' : ''}`}
+                    type="text"
+                    placeholder="Your full name"
+                    value={form.name}
+                    onChange={setInput('name')}
+                    required
+                    autoComplete="name"
+                  />
+                  {errors.name && <span className="form-error-msg">{errors.name}</span>}
                 </div>
-                <div style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>
-                  Thank you for reaching out. I&rsquo;ll get back to you soon.
+                <div className="form-group">
+                  <label className="form-label" htmlFor="f-email">Email *</label>
+                  <input
+                    id="f-email"
+                    className={`form-input${errors.email ? ' has-error' : ''}`}
+                    type="email"
+                    placeholder="your@email.com"
+                    value={form.email}
+                    onChange={setInput('email')}
+                    required
+                    autoComplete="email"
+                  />
+                  {errors.email && <span className="form-error-msg">{errors.email}</span>}
                 </div>
               </div>
-            ) : (
-              <form onSubmit={handleSubmit} noValidate>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="f-name">Name *</label>
-                    <input
-                      id="f-name"
-                      className="form-input"
-                      type="text"
-                      placeholder="Your full name"
-                      value={form.name}
-                      onChange={setInput('name')}
-                      required
-                      autoComplete="name"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="f-email">Email *</label>
-                    <input
-                      id="f-email"
-                      className="form-input"
-                      type="email"
-                      placeholder="your@email.com"
-                      value={form.email}
-                      onChange={setInput('email')}
-                      required
-                      autoComplete="email"
-                    />
-                  </div>
-                </div>
 
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="f-country">Country</label>
-                    <CustomSelect
-                      id="f-country"
-                      placeholder="Select country"
-                      value={form.country}
-                      onChange={setField('country')}
-                      options={countryOptions}
-                      searchable
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="f-company">Company / Business</label>
-                    <input
-                      id="f-company"
-                      className="form-input"
-                      type="text"
-                      placeholder="Your company name"
-                      value={form.company}
-                      onChange={setInput('company')}
-                      autoComplete="organization"
-                    />
-                  </div>
-                </div>
-
+              <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label" htmlFor="f-phone">Phone Number</label>
-                  <div className="phone-row">
-                    <CustomSelect
-                      id="f-dial"
-                      placeholder="+91"
-                      value={form.dialCode + '_IN'}
-                      onChange={(val) => setForm((prev) => ({ ...prev, dialCode: val.split('_')[0] }))}
-                      options={dialOptions}
-                      searchable
-                    />
-                    <input
-                      id="f-phone"
-                      className="form-input"
-                      type="tel"
-                      placeholder="Phone number"
-                      value={form.phone}
-                      onChange={setInput('phone')}
-                      autoComplete="tel"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label" htmlFor="f-project-type">Project Type</label>
+                  <label className="form-label" htmlFor="f-country">Country *</label>
                   <CustomSelect
-                    id="f-project-type"
-                    placeholder="What do you need?"
-                    value={form.projectType}
-                    onChange={setField('projectType')}
-                    options={projectOptions}
+                    id="f-country"
+                    placeholder="Select country"
+                    value={form.country}
+                    onChange={handleCountryChange}
+                    options={countryOptions}
+                    searchable
+                    hasError={!!errors.country}
                   />
+                  {errors.country && <span className="form-error-msg">{errors.country}</span>}
                 </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="f-currency">Currency</label>
-                    <CustomSelect
-                      id="f-currency"
-                      placeholder="INR"
-                      value={form.currency}
-                      onChange={handleCurrencyChange}
-                      options={currencyOptions}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="f-budget">Budget Range</label>
-                    <CustomSelect
-                      id="f-budget"
-                      placeholder="Select budget"
-                      value={form.budget}
-                      onChange={setField('budget')}
-                      options={budgetOptions}
-                    />
-                  </div>
-                </div>
-
                 <div className="form-group">
-                  <label className="form-label" htmlFor="f-message">Message *</label>
-                  <textarea
-                    id="f-message"
-                    className="form-textarea"
-                    placeholder="Tell me about your project, goals, timeline..."
-                    value={form.message}
-                    onChange={setInput('message')}
-                    required
-                    rows={4}
+                  <label className="form-label" htmlFor="f-company">Company / Business</label>
+                  <input
+                    id="f-company"
+                    className="form-input"
+                    type="text"
+                    placeholder="Your company name"
+                    value={form.company}
+                    onChange={setInput('company')}
+                    autoComplete="organization"
                   />
                 </div>
+              </div>
 
-                <button type="submit" className="btn-submit" id="form-submit">
-                  <Send size={16} />
-                  Start a Project
-                </button>
-              </form>
-            )}
+              <div className="form-group">
+                <label className="form-label" htmlFor="f-phone">Phone Number *</label>
+                <div className="phone-row">
+                  <CustomSelect
+                    id="f-dial"
+                    placeholder="+91"
+                    value={form.dialValue}
+                    onChange={handleDialChange}
+                    options={dialOptions}
+                    searchable
+                  />
+                  <input
+                    id="f-phone"
+                    className={`form-input${errors.phone ? ' has-error' : ''}`}
+                    type="tel"
+                    placeholder="Phone number"
+                    value={form.phone}
+                    onChange={setInput('phone')}
+                    autoComplete="tel"
+                  />
+                </div>
+                {errors.phone && <span className="form-error-msg">{errors.phone}</span>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="f-project-type">Project Type *</label>
+                <CustomSelect
+                  id="f-project-type"
+                  placeholder="What do you need?"
+                  value={form.projectType}
+                  onChange={setField('projectType')}
+                  options={projectOptions}
+                  hasError={!!errors.projectType}
+                />
+                {errors.projectType && <span className="form-error-msg">{errors.projectType}</span>}
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="f-currency">Currency *</label>
+                  <CustomSelect
+                    id="f-currency"
+                    placeholder="INR"
+                    value={form.currency}
+                    onChange={handleCurrencyChange}
+                    options={currencyOptions}
+                    hasError={!!errors.currency}
+                  />
+                  {errors.currency && <span className="form-error-msg">{errors.currency}</span>}
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="f-budget">Budget Range *</label>
+                  <CustomSelect
+                    id="f-budget"
+                    placeholder="Select budget"
+                    value={form.budget}
+                    onChange={setField('budget')}
+                    options={budgetOptions}
+                    hasError={!!errors.budget}
+                  />
+                  {errors.budget && <span className="form-error-msg">{errors.budget}</span>}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="f-message">Message *</label>
+                <textarea
+                  id="f-message"
+                  className={`form-textarea${errors.message ? ' has-error' : ''}`}
+                  placeholder="Tell me about your project, goals, timeline..."
+                  value={form.message}
+                  onChange={setInput('message')}
+                  required
+                  rows={4}
+                />
+                {errors.message && <span className="form-error-msg">{errors.message}</span>}
+              </div>
+
+              <button
+                type="submit"
+                className="btn-submit"
+                id="form-submit"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 size={16} className="spinner" /> : <Send size={16} />}
+                Start a Project
+              </button>
+            </form>
           </motion.div>
         </motion.div>
       </div>
